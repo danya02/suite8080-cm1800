@@ -1,0 +1,12 @@
+{
+    "printNewLine": 73,
+    "PNL": 73,
+    "printStr": 76,
+    "PSTR": 76,
+    "printStrNL": 79,
+    "PSNL": 79,
+    "inputChar": 85,
+    "IKCHR": 85,
+    "printHex": 97,
+    "PAXX": 97
+}

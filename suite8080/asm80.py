@@ -1,8 +1,12 @@
 """An Intel 8080 cross-assembler."""
+"""Originally Copyright (c) 2021 Paolo Amoroso"""
 
 import argparse
 from pathlib import Path
 import sys
+import os
+import json
+
 
 
 # Current source line number.
@@ -15,7 +19,34 @@ address = 0
 source_pass = 1
 
 # Assembled machine code.
-output = b''
+output = bytearray(65536)
+written_byte = [False for _ in range(65536)]
+write_address = 0
+def write(data):
+    global write_address
+    print(f'asm80> writing {data.hex()} at {write_address:04x}')
+    for index in range(len(data)):
+        if not written_byte[write_address]:
+            output[write_address] = data[index]
+            written_byte[write_address] = True
+            write_address += 1
+        else:
+            report_error(f'byte 0x{write_address + index:04x} has been written to more than once, check your assembly code')
+
+
+def seek(new_address):
+    global write_address
+    write_address = new_address
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 # Tokens
 label = ''
@@ -26,16 +57,135 @@ comment = ''
 
 # Symbol table: {'label1': <address1>, 'label2': <address2>, ...}
 symbol_table = {}
+try:
+    with open(resource_path('symbol_table.json'), 'r') as f:
+        symbol_table = json.load(f)
+        keys = list(symbol_table.keys())
+        for key in keys:
+            if key.lower() != key:
+                symbol_table[key.lower()] = symbol_table[key]
+                del symbol_table[key]
+        print('asm80> loaded symbol table with {} entries'.format(len(symbol_table)))
+        print(symbol_table)
+except Exception:
+    pass
 
 
 # Immediate operand type, 8-bit or 16-bit. An enum would be overkill and verbose.
 IMMEDIATE8=8
 IMMEDIATE16=16
 
+def encode_koi7n2(text):
+    output = b''
+    enc = {
+        ' ': 0x20,
+        '!': 0x21,
+        '"': 0x22,
+        '#': 0x23,
+        '$': 0x24,
+        '¤': 0x24,
+        '%': 0x25,
+        '&': 0x26,
+        "'": 0x27,
+        '(': 0x28,
+        ')': 0x29,
+        '*': 0x2A,
+        '+': 0x2B,
+        ',': 0x2C,  # doesn't work because of the parser
+        '-': 0x2D,
+        '.': 0x2E,
+        '/': 0x2F,
+        '0': 0x30,
+        '1': 0x31,
+        '2': 0x32,
+        '3': 0x33,
+        '4': 0x34,
+        '5': 0x35,
+        '6': 0x36,
+        '7': 0x37,
+        '8': 0x38,
+        '9': 0x39,
+        ':': 0x3A,
+        ';': 0x3B,
+        '<': 0x3C,
+        '=': 0x3D,
+        '>': 0x3E,
+        '?': 0x3F,
+        '@': 0x40,
+        'A': 0x41, 'a': 0x41,
+        'B': 0x42, 'b': 0x42,
+        'C': 0x43, 'c': 0x43,
+        'D': 0x44, 'd': 0x44,
+        'E': 0x45, 'e': 0x45,
+        'F': 0x46, 'f': 0x46,
+        'G': 0x47, 'g': 0x47,
+        'H': 0x48, 'h': 0x48,
+        'I': 0x49, 'i': 0x49,
+        'J': 0x4A, 'j': 0x4A,
+        'K': 0x4B, 'k': 0x4B,
+        'L': 0x4C, 'l': 0x4C,
+        'M': 0x4D, 'm': 0x4D,
+        'N': 0x4E, 'n': 0x4E,
+        'O': 0x4F, 'o': 0x4F,
+        'P': 0x50, 'p': 0x50,
+        'Q': 0x51, 'q': 0x51,
+        'R': 0x52, 'r': 0x52,
+        'S': 0x53, 's': 0x53,
+        'T': 0x54, 't': 0x54,
+        'U': 0x55, 'u': 0x55,
+        'V': 0x56, 'v': 0x56,
+        'W': 0x57, 'w': 0x57,
+        'X': 0x58, 'x': 0x58,
+        'Y': 0x59, 'y': 0x59,
+        'Z': 0x5A, 'z': 0x5A,
+        '[': 0x5B,
+        '\\': 0x5C,
+        ']': 0x5D,
+        '^': 0x5E,
+        '_': 0x5F,
+        'Ю': 0x60, 'ю': 0x60,
+        'А': 0x61, 'а': 0x61,
+        'Б': 0x62, 'б': 0x62,
+        'Ц': 0x63, 'ц': 0x63,
+        'Д': 0x64, 'д': 0x64,
+        'Е': 0x65, 'е': 0x65,
+        'Ф': 0x66, 'ф': 0x66,
+        'Г': 0x67, 'г': 0x67,
+        'Х': 0x68, 'х': 0x68,
+        'И': 0x69, 'и': 0x69,
+        'Й': 0x6A, 'й': 0x6A,
+        'К': 0x6B, 'к': 0x6B,
+        'Л': 0x6C, 'л': 0x6C,
+        'М': 0x6D, 'м': 0x6D,
+        'Н': 0x6E, 'н': 0x6E,
+        'О': 0x6F, 'о': 0x6F,
+        'П': 0x70, 'п': 0x70,
+        'Я': 0x71, 'я': 0x71,
+        'Р': 0x72, 'р': 0x72,
+        'С': 0x73, 'с': 0x73,
+        'Т': 0x74, 'т': 0x74,
+        'У': 0x75, 'у': 0x75,
+        'Ж': 0x76, 'ж': 0x76,
+        'В': 0x77, 'в': 0x77,
+        'Ь': 0x78, 'ь': 0x78,
+        'Ы': 0x79, 'ы': 0x79,
+        'З': 0x7A, 'з': 0x7A,
+        'Ш': 0x7B, 'ш': 0x7B,
+        'Э': 0x7C, 'э': 0x7C,
+        'Щ': 0x7D, 'щ': 0x7D,
+        'Ч': 0x7E, 'ч': 0x7E,
+    }
+    for c in text:
+        if c in enc:
+            output += bytes([enc[c]])
+        else:
+            output += bytes([0x3F])  # question mark
+            print('warning: unknown character `{}` in text'.format(c))
+    return output
+
 
 # Default output file name
 OUTFILE = 'program'
-
 
 def assemble(lines):
     """Assemble source lines."""
@@ -53,6 +203,9 @@ def assemble(lines):
         pass
 
     source_pass = 2
+    print('asm80> assembling second pass with symbol table:')
+    for key in symbol_table:
+        print(f'{key}: {symbol_table[key]:04X}h')
     try:
         for lineno, line in enumerate(lines):
             parse(line)
@@ -405,6 +558,8 @@ def report_error(message):
 
     # List indexes start at 0 but humans count lines starting at 1.
     print(f'asm80> line {lineno + 1}: {message}', file=sys.stderr)
+    if __name__ == '__main__':
+        input('Press Enter to exit...')
     sys.exit(1)
 
 
@@ -429,7 +584,7 @@ def pass_action(instruction_size, output_byte, should_add_label=True):
         # Pass 2. Output the byte representing the opcode. For instructions with
         # additional arguments or data we'll output that in a separate function.
         if output_byte != b'':
-            output += output_byte
+            write(output_byte)
 
 
 def add_label():
@@ -1038,7 +1193,9 @@ def db():
                 address += string_length
             else:
                 # Strip enclosing ' characters when adding to output.
-                output += bytes(argument[1:-1], encoding='utf-8')
+                text = argument[1:-1]
+                write(encode_koi7n2(text))
+
                 address += string_length
         # Label.
         else:
@@ -1048,7 +1205,7 @@ def db():
                     report_error(f'undefined label "{argument}"')
                 value = symbol_table[symbol]
                 value_size = 1 if (0 <= value <= 255) else 2
-                output += value.to_bytes(value_size, byteorder='little')
+                write(value.to_bytes(value_size, byteorder='little'))
                 address += value_size
 
 
@@ -1092,7 +1249,7 @@ def ds():
     if storage_size < 1:
         report_error(f'invalid "ds" operand or forward reference')
     if source_pass == 2:
-        output += bytes(storage_size)
+        write(bytes(storage_size))
     address += storage_size
 
 
@@ -1167,14 +1324,18 @@ def org():
     if operand1[0].isdigit():
         if source_pass == 1:
             address = get_number(operand1)
+        else:
+            seek(get_number(operand1))
     # Label, which must be defined before use.
     elif operand1[0].isalpha():
+        value = symbol_table.get(operand1.lower(), -1)
+        if not value:
+            report_error(f'invalid "org" address "{value}')
         if source_pass == 1:
-            value = symbol_table.get(operand1.lower(), -1)
-            if value:
-                address = value
-            else:
-                report_error(f'invalid "org" address "{value}')
+            address = value
+        else:
+            seek(value)
+
     else:
         report_error(f'invalid "org" operand "{operand1}"')
 
@@ -1263,7 +1424,7 @@ def immediate_operand(operand_type=IMMEDIATE8):
 
     if source_pass == 2:
         operand_size = 1 if operand_type == IMMEDIATE8  else 2
-        output += number.to_bytes(operand_size, byteorder='little')
+        write(number.to_bytes(operand_size, byteorder='little'))
 
 
 # BUG: doesn't work with immediate addresses like ffh; labels aren't added to
@@ -1282,7 +1443,7 @@ def address16():
             report_error(f'undefined label "{operand1}"')
 
     if source_pass == 2:
-        output += number.to_bytes(2, byteorder='little')
+        write(number.to_bytes(2, byteorder='little'))
 
 
 def get_number(input):
@@ -1310,7 +1471,7 @@ def main():
     parser = argparse.ArgumentParser(description=asm80_description)
     parser.add_argument('filename', default='-', help="input file, stdin if '-'")
     parser.add_argument('-o', '--outfile',
-                        help=f'output file, {OUTFILE + ".com"} if input is - and -o not supplied')
+                        help=f'output file, {OUTFILE + ".cmd"} if input is - and -o not supplied')
     parser.add_argument('-s', '--symtab', action='store_true',
                         help='save symbol table')
     parser.add_argument('-v', '--verbose', action='store_true',
@@ -1321,17 +1482,17 @@ def main():
         lines = sys.stdin.readlines()
     else:
         infile = Path(args.filename)
-        with open(infile, 'r') as file:
+        with open(infile, 'r', encoding='utf-8') as file:
             lines = file.readlines()
 
     if args.filename == '-':
-        outfile = args.outfile if args.outfile else OUTFILE + '.com'
+        outfile = args.outfile if args.outfile else OUTFILE + '.cmd'
         symfile = Path(args.outfile).stem + '.sym' if args.outfile else OUTFILE + '.sym'
     elif args.outfile:
         outfile = Path(args.outfile)
         symfile = Path(args.outfile).stem + '.sym'
     else:
-        outfile = Path(infile.stem + '.com')
+        outfile = Path(infile.stem + '.cmd')
         symfile = Path(infile.stem + '.sym')
 
     assemble(lines)
