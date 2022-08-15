@@ -1448,19 +1448,33 @@ def address16():
 
 def get_number(input):
     """Return value of hex or decimal numeric input string."""
+    mode = None
     if input.endswith(('h', 'H')):
+        mode = 'suffix'
         base = 16
     elif input.endswith(('q', 'Q')):
+        mode = 'suffix'
         base = 8
     elif input.endswith(('b', 'B')):
+        mode = 'suffix'
         base = 2
-    else:
-        base = 10
+    elif input.startswith(('0x', '0X')):
+        mode = 'prefix'
+        base = 16
+    elif input.startswith(('0b', '0B')):
+        mode = 'prefix'
+        base = 2
+    elif input.startswith(('0o','0O')):
+        mode = 'prefix'
+        base = 8
 
-    if base != 10:
+    if not mode:
+        # Default to decimal.
+        number = int(input, 10)
+    elif mode == 'suffix':
         number = int(input[:-1], base)
-    else:
-        number = int(input)
+    elif mode == 'prefix':
+        number = int(input[2:], base)
 
     return number
 

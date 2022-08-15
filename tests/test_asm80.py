@@ -6,6 +6,8 @@ import pytest
 
 from suite8080 import asm80
 
+import string
+
 
 @pytest.mark.parametrize('source_line, expected', [
     # Label, mnemonic, operand1, operand2, comment
@@ -267,6 +269,15 @@ def test_immediate_operand_decimal():
 def test_get_number(input, number):
     assert asm80.get_number(input) == number
 
+@pytest.mark.parametrize('input, number', [
+    ('0x10', 0x10),
+    ('0xff', 0xff),
+    ('0x01', 0x01),
+    ('0x1234', 0x1234)
+])
+def test_get_number_hex(input, number):
+    assert asm80.get_number(input) == number
+
 
 @pytest.mark.parametrize('current_address, expression, value', [
     (2, '$+2', 4),
@@ -325,3 +336,12 @@ def test_write_symbol_table_long_symbol(tmp_path):
     # Symbols are truncated to 16 characters when saving to the symbol table, so
     # the full symbol 'thisisaverylongsymbol' should be missing from symbols.
     assert not('THISISAVERYLONGSYMBOL' in symbols)
+
+def test_koi7n2():
+    assert asm80.encode_koi7n2(string.ascii_letters) == string.ascii_letters.upper().encode()
+    punctuation = r"""!"#$%&'()*+,-./:;<=>?@[\]^_""" # without braces, backtick and pipe which are not in KOI7-N 
+    assert asm80.encode_koi7n2(punctuation) == punctuation.encode()
+
+    russian_koi_order = 'юабцдефгхийклмнопярстужвьызшэщч'
+    assert asm80.encode_koi7n2(russian_koi_order) == bytes(range(0x60, 0x7e+1))
+    assert asm80.encode_koi7n2(russian_koi_order.upper()) == bytes(range(0x60, 0x7e+1))
